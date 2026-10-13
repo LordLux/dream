@@ -41,6 +41,7 @@
     steal: () => { note(330, 0, 0.3, 'sawtooth', 0.07, 110); note(165, 0.05, 0.35, 'square', 0.05, 82); },
     shuffle: () => { for (let i = 0; i < 14; i++) note(700 + Math.random() * 700, i * 0.07, 0.03, 'square', 0.022); },
     deal: () => note(720, 0, 0.06, 'triangle', 0.07, 400),
+    whoosh: () => { note(240, 0, 0.55, 'sine', 0.05, 110); note(480, 0.1, 0.5, 'sine', 0.025, 200); },
     discard: () => note(260, 0, 0.16, 'triangle', 0.1, 150),
     error: () => { note(180, 0, 0.1, 'square', 0.06); note(150, 0.1, 0.14, 'square', 0.06); },
     turn: () => note(880, 0, 0.12, 'sine', 0.07),

@@ -114,6 +114,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* cards keep one width whether there are two of them or one, so text never re-wraps mid-transition */
 .lobby-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 323px)); justify-content: center; gap: 14px; width: min(660px, 100%); }
 .lobby-grid .toggle { font-size: .85rem; }
+/* screen transitions */
+.screen-ghost { position: fixed; margin: 0; z-index: 50; pointer-events: none; }
+#cloud-wipe { position: fixed; inset: 0; z-index: 500; overflow: hidden; }
+#cloud-wipe svg { display: block; }
+#cloud-wipe path { transform-box: view-box; transform-origin: 0 0; }
 .lobby-ghost { position: fixed; margin: 0; z-index: 0; pointer-events: none; }
 .lobby-grid .panel { position: relative; z-index: 1; }
 .lobby-grid .panel, .lobby-ghost { display: flex; flex-direction: column; gap: 12px; text-align: left; }

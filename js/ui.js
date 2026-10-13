@@ -28,6 +28,196 @@
   function showScreen(id) {
     ['menu', 'lobby', 'game'].forEach((s) => $('#' + s).classList.toggle('hidden', s !== id));
   }
+  const currentScreen = () => ['menu', 'lobby', 'game'].find((s) => !$('#' + s).classList.contains('hidden'));
+
+  // ---------- screen transitions ----------
+  const motionOK = () => !!document.body.animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const EASE = 'cubic-bezier(.45,0,.2,1)';
+  // A fixed-position copy of an element, left exactly where the element is now.
+  function ghostOf(el) {
+    const r = el.getBoundingClientRect();
+    const ghost = el.cloneNode(true);
+    [ghost, ...ghost.querySelectorAll('[id]')].forEach((n) => n.removeAttribute('id'));
+    ghost.classList.add('screen-ghost');
+    ghost.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`;
+    document.body.appendChild(ghost);
+    ghost.rect = r;
+    return ghost;
+  }
+  const play = (el, frames, duration, after) => {
+    const an = el.animate(frames, { duration, easing: EASE, fill: 'backwards' });
+    if (after) an.onfinish = after;
+    return an;
+  };
+  const box = (r) => ({ left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
+  // translate that puts the centre of `a` on the centre of `b`
+  const onto = (a, b) => `translate(${b.left + b.width / 2 - a.left - a.width / 2}px, ${b.top + b.height / 2 - a.top - a.height / 2}px)`;
+  const flyUp = (r) => `translateY(${-(r.bottom + 30)}px)`;
+  const MORPH = 580;
+
+  // Menu -> online lobby: the title and cards lift away, the menu card slides left and
+  // becomes the Host card, and the Join card comes out from behind it.
+  function openLobby() {
+    setLobbyStatus('');
+    if (!motionOK()) { showScreen('lobby'); return; }
+    const ups = ['#menu-fan', '#menu .logo', '#menu .tagline'].map((s) => ghostOf($(s)));
+    const outs = ['#menu .menu-foot', '#menu .credit'].map((s) => ghostOf($(s)));
+    const card = ghostOf($('.menu-panel'));
+    showScreen('lobby');
+    const host = $('#host-panel'), join = $('#join-panel');
+    const hr = host.getBoundingClientRect(), jr = join.getBoundingClientRect(), pr = card.rect;
+
+    ups.forEach((g) => play(g, [{ transform: 'none', opacity: 1 }, { transform: flyUp(g.rect), opacity: 0.3 }], MORPH, () => g.remove()));
+    outs.forEach((g) => play(g, [{ opacity: 1 }, { opacity: 0 }], 200, () => g.remove()).effect.updateTiming({ fill: 'forwards' }));
+    card.style.overflow = 'hidden';
+    play(card, [{ ...box(pr), opacity: 1 }, { opacity: 1, offset: 0.4 }, { ...box(hr), opacity: 0 }], MORPH, () => card.remove());
+    host.style.zIndex = 2;
+    play(host, [{ transform: onto(hr, pr), opacity: 0 }, { opacity: 1, offset: 0.55 }, { transform: 'none', opacity: 1 }], MORPH, () => { host.style.zIndex = ''; });
+    play(join, [{ transform: onto(jr, pr) + ' scale(.82)', opacity: 0 }, { opacity: 1, offset: 0.35 }, { transform: 'none', opacity: 1 }], MORPH);
+    play($('#lobby .screen-title'), [{ transform: 'translateY(-50px)', opacity: 0 }, { transform: 'none', opacity: 1 }], MORPH);
+    ['#lobby-status', '#lobby .menu-foot'].forEach((s) => play($(s), [{ opacity: 0 }, { opacity: 0, offset: 0.5 }, { opacity: 1 }], MORPH));
+  }
+
+  // Lobby -> menu: the same moves, backwards.
+  function closeLobby() {
+    if (!motionOK()) { showScreen('menu'); return; }
+    const shown = [$('#host-panel'), $('#join-panel')].filter((el) => el.offsetParent);
+    const main = ghostOf(shown[0]);
+    const side = shown[1] ? ghostOf(shown[1]) : null;
+    const title = ghostOf($('#lobby .screen-title'));
+    const foot = ghostOf($('#lobby .menu-foot'));
+    showScreen('menu');
+    const panel = $('.menu-panel');
+    const pr = panel.getBoundingClientRect(), mr = main.rect;
+
+    main.style.overflow = 'hidden';
+    main.style.zIndex = 52;
+    play(main, [{ ...box(mr), opacity: 1 }, { opacity: 1, offset: 0.6 }, { ...box(pr), opacity: 0 }], MORPH, () => main.remove());
+    play(panel, [
+      { transform: onto(pr, mr) + ` scale(${mr.width / pr.width}, ${mr.height / pr.height})`, opacity: 0 },
+      { opacity: 1, offset: 0.6 }, { transform: 'none', opacity: 1 },
+    ], MORPH);
+    if (side) {
+      const tucked = onto(side.rect, pr) + ' scale(.82)';
+      play(side, [{ transform: 'none', opacity: 1 }, { opacity: 1, offset: 0.4 }, { transform: tucked, opacity: 0, offset: 0.62 }, { transform: tucked, opacity: 0 }], MORPH, () => side.remove());
+    }
+    play(title, [{ transform: 'none', opacity: 1 }, { transform: 'translateY(-50px)', opacity: 0 }], MORPH * 0.6, () => title.remove()).effect.updateTiming({ fill: 'forwards' });
+    play(foot, [{ opacity: 1 }, { opacity: 0 }], 200, () => foot.remove()).effect.updateTiming({ fill: 'forwards' });
+    ['#menu-fan', '#menu .logo', '#menu .tagline'].forEach((s) => {
+      const el = $(s);
+      play(el, [{ transform: flyUp(el.getBoundingClientRect()), opacity: 0.3 }, { transform: 'none', opacity: 1 }], MORPH);
+    });
+    ['#menu .menu-foot', '#menu .credit'].forEach((s) => play($(s), [{ opacity: 0 }, { opacity: 0, offset: 0.5 }, { opacity: 1 }], MORPH));
+  }
+
+  // Into or out of a game: three layers of cloud close over the screen from the outside in,
+  // the screen changes while it is covered (onCovered), and they open up again in reverse.
+  //   1. one continuous cloud that wraps the whole border of the screen and closes in on the sides
+  //   2. a second, looser ring (fewer, bigger billows) that fills the space towards the middle
+  //   3. a single cloud that puffs up in the centre
+  // Each ring is one unbroken shape: a huge sheet with a scalloped, cloud-edged hole in it.
+  // Closed billowy outline around an a x b shape: an ellipse when squareness is 2, closer and
+  // closer to a rounded rectangle (edges parallel to the screen's) as it goes up.
+  function scallop(a, b, bumps, sweep, squareness = 2) {
+    const bend = (v) => Math.sign(v) * Math.pow(Math.abs(v), 2 / squareness);
+    // trace the outline finely and measure it, so billows are spaced by distance along it
+    const STEPS = 720, trace = [], dist = [0];
+    for (let i = 0; i <= STEPS; i++) {
+      const t = (i / STEPS) * Math.PI * 2;
+      trace.push([a * bend(Math.cos(t)), b * bend(Math.sin(t))]);
+      if (i) dist.push(dist[i - 1] + Math.hypot(trace[i][0] - trace[i - 1][0], trace[i][1] - trace[i - 1][1]));
+    }
+    // uneven billows: each takes a random share of the way round and sits a little in or out
+    const shares = Array.from({ length: bumps }, () => 0.65 + Math.random() * 0.7);
+    const total = shares.reduce((sum, v) => sum + v, 0);
+    const pts = [];
+    let turn = Math.random(), at = 0;
+    shares.forEach((share) => {
+      const want = ((turn / total) % 1) * dist[STEPS];
+      if (dist[at] > want) at = 0;
+      while (dist[at] < want) at++;
+      const k = 0.96 + Math.random() * 0.08;
+      pts.push([trace[at][0] * k, trace[at][1] * k]);
+      turn += share;
+    });
+    let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+    const tips = []; // points along every billow's inner curve
+    for (let i = 1; i <= bumps; i++) {
+      const [x, y] = pts[i % bumps], [px, py] = pts[i - 1];
+      const chord = Math.hypot(x - px, y - py);
+      const r = chord * (0.505 + Math.random() * 0.05); // close to a half circle: round and puffy
+      d += `A${r.toFixed(1)} ${r.toFixed(1)} 0 0 ${sweep} ${x.toFixed(1)} ${y.toFixed(1)}`;
+      // sample the arc itself: it bulges square to its chord, on the side facing the centre
+      const mx = (x + px) / 2, my = (y + py) / 2;
+      let nx = -(y - py) / chord, ny = (x - px) / chord;
+      if (nx * mx + ny * my > 0) { nx = -nx; ny = -ny; }
+      const rise = Math.sqrt(Math.max(0, r * r - chord * chord / 4));
+      for (let k = 0; k <= 10; k++) {
+        const along = (k / 10 - 0.5) * chord;
+        const bulge = Math.sqrt(Math.max(0, r * r - along * along)) - rise;
+        tips.push([mx + ((x - px) / chord) * along + nx * bulge, my + ((y - py) / chord) * along + ny * bulge]);
+      }
+    }
+    return { d: d + 'Z', tips };
+  }
+  const perimeter = (a, b) => Math.PI * 2 * Math.sqrt((a * a + b * b) / 2);
+
+  let wiping = false;
+  function cloudWipe(onCovered) {
+    // (a background tab gets no animation frames and throttled timers: switch at once there)
+    if (wiping || document.hidden || !motionOK()) { onCovered(); return; }
+    wiping = true;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const big = 6 * Math.max(vw, vh);
+    const sheet = `M${-big} ${-big}H${big}V${big}H${-big}Z`;
+    const billow = Math.max(110, Math.min(240, Math.max(vw, vh) * 0.11)); // width of one billow, px
+    const SHADE = '#ddd0f6';
+    const parts = []; // drawn bottom to top; the outer ring ends up on top
+
+    // 3: the centre cloud (underneath, seen through the hole of ring 2)
+    const ca = vw * 0.28, cb = vh * 0.27;
+    // (a billow is never wider than the shape it sits on is deep, or it swallows the shape)
+    const count = (a, b, width, least) => Math.max(least, Math.round(perimeter(a, b) / Math.min(width, Math.min(a, b) * 0.85)));
+    const puff = scallop(ca, cb, count(ca, cb, billow * 1.4, 6), 1).d;
+    parts.push({ d: puff, fill: SHADE, from: 0, to: 1.04, layer: 3 }, { d: puff, fill: '#fff', from: 0, to: 1, layer: 3 });
+
+    // 2 and 1: rings. `from` is the scale at which the hole is still bigger than the screen.
+    const ring = (a, b, bumps, fill, layer, squareness) => {
+      const edge = scallop(a, b, bumps, 0, squareness);
+      const d = sheet + edge.d;
+      // Start (and finish) at the scale where even the deepest billow, on the slightly
+      // smaller shaded copy too, is clear of the screen - otherwise bits of cloud are still
+      // in view when the animation begins or ends, and they pop in and out.
+      const clear = Math.max(...edge.tips.map(([x, y]) => Math.min(vw / 2 / Math.abs(x), vh / 2 / Math.abs(y))));
+      const from = (clear / 0.965) * 1.06;
+      parts.push({ d, fill: SHADE, from: from * 0.965, to: 0.965, layer, ring: true }, { d, fill, from, to: 1, layer, ring: true });
+    };
+    const a2 = vw * 0.22, b2 = vh * 0.2;
+    ring(a2, b2, count(a2, b2, billow * 1.5, 6), '#f8f4fe', 2, 3);
+    const a1 = vw * 0.36, b1 = vh * 0.34; // well inside the edges, so the border cloud visibly travels
+    ring(a1, b1, count(a1, b1, billow / 1.15, 10), '#fff', 1, 6);
+
+    const layer = document.createElement('div');
+    layer.id = 'cloud-wipe';
+    layer.innerHTML = `<svg width="${vw}" height="${vh}" viewBox="${-vw / 2} ${-vh / 2} ${vw} ${vh}" aria-hidden="true">` +
+      parts.map((part) => `<path d="${part.d}" fill="${part.fill}" fill-rule="evenodd"/>`).join('') + '</svg>';
+    document.body.appendChild(layer);
+
+    // when each layer moves, in ms: [start, length] closing, then opening (relative to the opening start)
+    const IN = { 1: [0, 580], 2: [220, 520], 3: [740, 540] };
+    const OUT = { 3: [0, 330], 2: [150, 500], 1: [300, 600] };
+    const covered = 1200, HOLD = 150; // the centre cloud is done growing at 1280, just before the hold ends
+    Array.from(layer.querySelectorAll('path')).forEach((el, i) => {
+      const part = parts[i];
+      const far = { transform: `scale(${part.from})` }, home = { transform: `scale(${part.to})` };
+      const [inAt, inFor] = IN[part.layer], [outAt, outFor] = OUT[part.layer];
+      el.animate([far, home], { duration: inFor, delay: inAt, easing: part.ring ? 'cubic-bezier(.3,.45,.3,1)' : 'cubic-bezier(.3,1.3,.5,1)', fill: 'both' });
+      el.animate([home, far], { duration: outFor, delay: covered + HOLD + outAt, easing: part.ring ? 'cubic-bezier(.6,0,.75,.55)' : 'cubic-bezier(.6,0,.7,.65)', fill: 'forwards' });
+    });
+    Sfx.play('whoosh');
+    setTimeout(onCovered, covered);
+    setTimeout(() => { layer.remove(); wiping = false; }, covered + HOLD + 300 + 600 + 120);
+  }
   let toastTimer = 0;
   function toast(msg) {
     const el = $('#toast');
@@ -308,7 +498,8 @@
     const PASSES = 3, PASS = 400, ENTER = 160;
     const SHUFFLE = ENTER + PASSES * PASS + 90, STEP = 85, FLIGHT = 380;
     const dealEnd = SHUFFLE + deals.length * STEP;
-    const later = (ms, fn) => ctx.introTimers.push(setTimeout(fn, ms));
+    const LEAD = wiping ? 500 : 0; // wait for the clouds to part before the first riffle
+    const later = (ms, fn) => ctx.introTimers.push(setTimeout(fn, ms + LEAD));
     const DEPTH = 0.6; // px each card sits up-and-left of the one below: gives the stack its thickness
     const randomOrder = () => {
       const o = stack.map((_, i) => i);
@@ -350,13 +541,13 @@
         frames.push({ transform: stackAt(o[i]), offset: (t0 + PASS) / SHUFFLE, easing: 'ease-in-out' });
       });
       frames.push({ transform: at(0, 0), offset: 1 });
-      ghost.animate(frames, { duration: SHUFFLE, fill: 'both' });
+      ghost.animate(frames, { duration: SHUFFLE, delay: LEAD, fill: 'both' });
 
       const flyTo = (el, delay, duration, spin) => {
         const r = el.getBoundingClientRect();
         const end = `translate(${r.left + r.width / 2 - w / 2}px, ${r.top + r.height / 2 - h / 2}px) rotate(0deg) scale(${r.width / w})`;
         ghost.animate([{ transform: at(0, 0) }, { transform: at(0, spin), offset: 0.12 }, { transform: end }],
-          { duration, delay, easing: 'cubic-bezier(.3,.9,.3,1)', fill: 'forwards' });
+          { duration, delay: delay + LEAD, easing: 'cubic-bezier(.3,.9,.3,1)', fill: 'forwards' });
       };
       if (item.to) {
         const delay = SHUFFLE + item.order * STEP;
@@ -366,7 +557,7 @@
         flyTo($('#pile'), dealEnd + 160 + i * 25, 420, 0);
       }
     });
-    Sfx.play('shuffle');
+    later(0, () => Sfx.play('shuffle'));
     later(dealEnd + 160 + REST * 25 + 470, () => endIntro(true));
   }
 
@@ -450,16 +641,20 @@
   }
 
   function toMenu() {
-    ctx.gameId++;
-    endIntro(false);
+    const from = currentScreen();
+    ctx.gameId++; // stops bot moves and timers of the game being left
     if (ctx.net) { ctx.net.close(); ctx.net = null; }
-    ctx.mode = null;
-    ctx.state = null;
-    ctx.view = null;
-    ['win-overlay', 'pass-overlay', 'quit-confirm'].forEach((id) => $('#' + id).classList.add('hidden'));
-    setLobby('choose');
-    setLobbyStatus('');
-    showScreen('menu');
+    const finish = () => {
+      endIntro(false);
+      ctx.mode = null;
+      ctx.state = null;
+      ctx.view = null;
+      ['win-overlay', 'pass-overlay', 'quit-confirm'].forEach((id) => $('#' + id).classList.add('hidden'));
+      if (from === 'lobby') closeLobby(); else showScreen('menu');
+      setLobby('choose');
+      setLobbyStatus('');
+    };
+    if (from === 'game') cloudWipe(finish); else finish();
   }
 
   $('#again-btn').addEventListener('click', () => {
@@ -598,7 +793,7 @@
           $('#code-stage').classList.remove('pending');
         }, Math.max(0, 900 - (Date.now() - asked)));
       } else if (ev === 'connected') {
-        startGame('host');
+        cloudWipe(() => { if (ctx.net === net) startGame('host'); });
       } else if (ev === 'data') {
         if (!ctx.state || !data) return;
         if (data.t === 'action') {
@@ -622,7 +817,8 @@
     if (ctx.net) ctx.net.close();
     setLobby('join');
     setLobbyStatus('Looking for room ' + code + '…');
-    ctx.net = D.Net.create('guest', code, (ev, data) => {
+    let entering = null; // first table state, held while the clouds roll in
+    const net = ctx.net = D.Net.create('guest', code, (ev, data) => {
       if (ev === 'connected') {
         setLobbyStatus('Connected! Dealing cards…');
       } else if (ev === 'data') {
@@ -630,7 +826,19 @@
         if (data.t === 'full') { netFailed('That room is already full.'); return; }
         if (data.t === 'error') { toast(data.msg); Sfx.play('error'); }
         if (data.view) {
-          if (ctx.mode !== 'guest' || (data.view.winner === null && data.view.eventN === 0)) startGame('guest');
+          if (entering) { entering = data.view; return; }
+          if (ctx.mode !== 'guest') { // first state: walk into the game through the clouds
+            entering = data.view;
+            cloudWipe(() => {
+              const view = entering;
+              entering = null;
+              if (ctx.net !== net) return;
+              startGame('guest');
+              show(view);
+            });
+            return;
+          }
+          if (data.view.winner === null && data.view.eventN === 0) startGame('guest'); // rematch
           ctx.locked = false;
           show(data.view);
         }
@@ -779,8 +987,9 @@
   // ---------- menu, settings, modals ----------
   $$('[data-mode]').forEach((btn) => btn.addEventListener('click', () => {
     Sfx.play('select');
-    if (btn.dataset.mode === 'online') { setLobbyStatus(''); showScreen('lobby'); }
-    else startGame(btn.dataset.mode);
+    if (currentScreen() !== 'menu') return; // a transition is already under way
+    if (btn.dataset.mode === 'online') openLobby();
+    else cloudWipe(() => startGame(btn.dataset.mode));
   }));
 
   function syncRule() {
