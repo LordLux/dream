@@ -500,6 +500,7 @@
     const dealEnd = SHUFFLE + deals.length * STEP;
     const LEAD = wiping ? 500 : 0; // wait for the clouds to part before the first riffle
     const later = (ms, fn) => ctx.introTimers.push(setTimeout(fn, ms + LEAD));
+    const landed = new Map(); // hand card -> its face-down stand-in and where that came to rest
     const DEPTH = 0.6; // px each card sits up-and-left of the one below: gives the stack its thickness
     const randomOrder = () => {
       const o = stack.map((_, i) => i);
@@ -548,17 +549,38 @@
         const end = `translate(${r.left + r.width / 2 - w / 2}px, ${r.top + r.height / 2 - h / 2}px) rotate(0deg) scale(${r.width / w})`;
         ghost.animate([{ transform: at(0, 0) }, { transform: at(0, spin), offset: 0.12 }, { transform: end }],
           { duration, delay: delay + LEAD, easing: 'cubic-bezier(.3,.9,.3,1)', fill: 'forwards' });
+        return end;
       };
       if (item.to) {
         const delay = SHUFFLE + item.order * STEP;
-        flyTo(item.to, delay, FLIGHT, side * 20);
+        landed.set(item.to, { ghost, rest: flyTo(item.to, delay, FLIGHT, side * 20) });
         later(delay, () => Sfx.play('deal'));
       } else {
         flyTo($('#pile'), dealEnd + 160 + i * 25, 420, 0);
       }
     });
     later(0, () => Sfx.play('shuffle'));
-    later(dealEnd + 160 + REST * 25 + 470, () => endIntro(true));
+
+    // Once the hands have landed, my cards turn over one by one, left to right: the face-down
+    // stand-in swings round until it is edge-on, then the real card swings on from the other side.
+    // (Not in pass-and-play: that hand stays hidden until the device has been passed.)
+    const HALF = 190, GAP = 85;
+    const flips = ctx.mode === 'hotseat' ? [] : $$('#my-hand .card').filter((el) => landed.has(el));
+    const flipAt = dealEnd + FLIGHT - STEP + 120;
+    later(flipAt, () => {
+      const turned = (deg) => ` perspective(${Math.round(w * 6)}px) rotateY(${deg}deg)`;
+      flips.forEach((el, n) => {
+        const { ghost, rest } = landed.get(el);
+        ghost.animate([{ transform: rest + turned(0) }, { transform: rest + turned(90) }],
+          { duration: HALF, delay: n * GAP, easing: 'ease-in', fill: 'forwards' });
+        el.style.visibility = 'visible'; // edge-on, so still unseen, until its half of the turn
+        el.animate([{ transform: turned(-90) }, { transform: turned(0) }],
+          { duration: HALF, delay: n * GAP + HALF, easing: 'ease-out', fill: 'backwards' });
+        ctx.introTimers.push(setTimeout(() => Sfx.play('deal'), n * GAP + HALF));
+      });
+    });
+    const flipsDone = flipAt + (flips.length ? (flips.length - 1) * GAP + HALF * 2 + 60 : 0);
+    later(Math.max(flipsDone, dealEnd + 160 + REST * 25 + 470), () => endIntro(true));
   }
 
   function endIntro(runWaiters) {
@@ -569,10 +591,10 @@
     const layer = $('#intro-layer');
     if (layer) layer.remove();
     $('#game').classList.remove('dealing');
+    $$('#my-hand .card').forEach((el) => { el.style.visibility = ''; });
     const waiters = ctx.introWaiters;
     ctx.introWaiters = [];
     if (runWaiters) {
-      $$('#my-hand .card').forEach((el) => el.classList.add('pop')); // "flip" the dealt hand face-up
       refresh();
       waiters.forEach((fn) => fn());
     }
