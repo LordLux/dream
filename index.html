@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1e1b38">
+  <title>Dream — a cozy card game</title>
+  <meta name="description" content="A cozy digital adaptation of the card game Dream. Play online with a friend, against a bot, or pass-and-play.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232d2654'/%3E%3Ccircle cx='16' cy='16' r='8' fill='%23ffd98a'/%3E%3Ccircle cx='20' cy='13' r='7' fill='%232d2654'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Pixelify+Sans:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="stars" aria-hidden="true"></div>
+
+  <!-- ============ MAIN MENU ============ -->
+  <section id="menu" class="screen">
+    <div class="menu-fan" id="menu-fan" aria-hidden="true"></div>
+    <h1 class="logo">Dream</h1>
+    <p class="tagline">a cozy little card game of dreams &amp; nightmares</p>
+    <div class="panel menu-panel">
+      <button class="btn btn-dream" data-mode="online"><span class="ico">☁</span>Play Online <small>2 players · room code</small></button>
+      <button class="btn btn-rem" data-mode="bot"><span class="ico">✿</span>Play vs. Bot <small>single player</small></button>
+      <button class="btn btn-night" data-mode="hotseat"><span class="ico">☾</span>Pass &amp; Play <small>2 players · one device</small></button>
+      <label class="toggle">
+        <input type="checkbox" class="rule-rem-steal">
+        <span class="switch"></span>
+        <span>Nightmares can also steal REM: <b class="rule-state">Off</b></span>
+      </label>
+    </div>
+    <div class="menu-foot">
+      <button class="link-btn" data-open="rules">How to play</button>
+      <button class="link-btn mute-btn" aria-label="Toggle sound">🔊 Sound on</button>
+    </div>
+    <p class="credit">Fan-made adaptation inspired by <i>Dream</i> (Little Rocket Games) by Giampaolo Razzino &amp; Alessia Iorno.</p>
+  </section>
+
+  <!-- ============ ONLINE LOBBY ============ -->
+  <section id="lobby" class="screen hidden">
+    <h2 class="screen-title">Play Online</h2>
+    <div class="lobby-grid">
+      <div class="panel" id="host-panel">
+        <h3>Host a game</h3>
+        <p class="muted">Create a room and share the code with your friend.</p>
+        <label class="toggle">
+          <input type="checkbox" class="rule-rem-steal">
+          <span class="switch"></span>
+          <span>Nightmares can also steal REM: <b class="rule-state">Off</b></span>
+        </label>
+        <button class="btn btn-dream" id="host-btn">Host Game</button>
+        <div id="host-room" class="room hidden">
+          <span class="muted room-label" id="room-label">Room code</span>
+          <div class="code-stage pending" id="code-stage">
+            <button class="room-code" id="copy-code" title="Click to copy" aria-label="Copy room code"><span id="room-code">·····</span></button>
+            <div class="code-cloud" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+          <p class="muted waiting"><span id="room-wait">Dreaming up a room code</span><span class="dots"></span></p>
+        </div>
+      </div>
+      <div class="panel" id="join-panel">
+        <h3>Join a game</h3>
+        <p class="muted">Enter the room code your friend sent you.</p>
+        <input id="join-code" class="code-input" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Room code">
+        <button class="btn btn-night" id="join-btn">Join Game</button>
+      </div>
+    </div>
+    <p id="lobby-status" class="lobby-status" role="status"></p>
+    <div class="menu-foot">
+      <button class="link-btn hidden" id="lobby-return">← Go back</button>
+      <button class="link-btn" id="lobby-back">Exit to menu</button>
+    </div>
+  </section>
+
+  <!-- ============ GAME TABLE ============ -->
+  <section id="game" class="screen hidden">
+    <header class="topbar">
+      <button class="icon-btn" id="quit-btn" aria-label="Quit to menu" title="Quit to menu">✕</button>
+      <div id="turn-banner" class="turn-banner">Your turn</div>
+      <div class="topbar-right">
+        <span id="rule-chip" class="rule-chip hidden" title="Nightmares can also steal REM">REM stealable</span>
+        <button class="icon-btn" data-open="rules" aria-label="How to play" title="How to play">?</button>
+        <button class="icon-btn mute-btn" aria-label="Toggle sound" title="Toggle sound">🔊</button>
+      </div>
+    </header>
+
+    <div class="seat seat-opp">
+      <div class="nameplate"><span id="opp-name">Opponent</span><span class="pips" id="opp-pips"></span></div>
+      <div class="hand" id="opp-hand"></div>
+    </div>
+    <div class="board" id="opp-board"></div>
+
+    <div class="mid">
+      <div class="pile-wrap">
+        <div id="pile" class="pile" role="button" aria-label="Draw pile"></div>
+        <span class="pile-label">Draw</span>
+      </div>
+      <div class="status">
+        <div id="log" class="log">Welcome to Dream!</div>
+        <div id="hint" class="hint"></div>
+      </div>
+      <div class="pile-wrap">
+        <div id="discard" class="pile discard" role="button" aria-label="Discard bin"></div>
+        <span class="pile-label">Discard</span>
+      </div>
+    </div>
+
+    <div class="board" id="my-board"></div>
+    <div class="seat seat-me">
+      <div class="nameplate"><span id="my-name">You</span><span class="pips" id="my-pips"></span><span class="hand-count" id="my-count"></span></div>
+      <div class="hand" id="my-hand"></div>
+    </div>
+  </section>
+
+  <!-- ============ OVERLAYS ============ -->
+  <div id="pass-overlay" class="overlay solid hidden">
+    <div class="panel center">
+      <div class="big-emoji">🌙</div>
+      <h2>Pass the device</h2>
+      <p>It's <b id="pass-name">Player 2</b>'s turn. No peeking!</p>
+      <button class="btn btn-dream" id="pass-ready">I'm ready</button>
+    </div>
+  </div>
+
+  <div id="win-overlay" class="overlay hidden">
+    <div id="confetti" aria-hidden="true"></div>
+    <div class="panel center win-panel">
+      <div class="big-emoji" id="win-emoji">🌟</div>
+      <h2 id="win-title">You win!</h2>
+      <p id="win-sub" class="muted">Sweet dreams.</p>
+      <div id="win-stats"></div>
+      <div class="row">
+        <button class="btn btn-dream" id="again-btn">Play Again</button>
+        <button class="btn btn-ghost" id="win-menu-btn">Main Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="rules" class="overlay hidden">
+    <div class="panel rules-panel">
+      <button class="icon-btn close" data-close="rules" aria-label="Close">✕</button>
+      <h2>How to play</h2>
+      <p><b>Goal:</b> be the first to fill all six of your slots (1–6) with Dream or REM cards.</p>
+      <p><b>On your turn do exactly one thing:</b></p>
+      <ul>
+        <li><b>Draw</b> the top card of the pile (only with fewer than 8 cards in hand). Its back shows whether it's a Dream or a Nightmare.</li>
+        <li><b class="c-dream">Dream</b> — play it on your own slot with the same number. It can cover an empty slot, a Nightmare, or a duplicate Dream. A <b>Jolly ↻</b> fits any slot.</li>
+        <li><b class="c-rem">REM</b> — play it on any of your empty or Nightmare slots. It counts as a Dream, and Nightmares can't touch it.</li>
+        <li><b class="c-rem">REM swap</b> — play a matching Dream (or Dream Jolly) onto your opponent's REM: your Dream stays there, and you take their REM into your hand.</li>
+        <li><b class="c-night">Nightmare</b> — play it on an opponent's Dream with the same number (Jolly ↻: any Dream). You steal that Dream into your hand and the Nightmare stays in their slot.</li>
+        <li><b>Discard</b> — with 8 cards in hand you may discard one card instead.</li>
+      </ul>
+      <p class="muted">Tap a card then a glowing slot, or drag the card there. Tapping a card that has only one place to go plays it at once. Tap the draw pile to draw.</p>
+    </div>
+  </div>
+
+  <div id="quit-confirm" class="overlay hidden">
+    <div class="panel center">
+      <div class="big-emoji">🌙</div>
+      <h2>Leave this game?</h2>
+      <p class="muted">The current game will be lost.</p>
+      <div class="row">
+        <button class="btn btn-ghost" id="quit-no">Keep playing</button>
+        <button class="btn btn-night" id="quit-yes">Leave</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <script src="vendor/peerjs.min.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/bot.js"></script>
+  <script src="js/art.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
