@@ -219,4 +219,61 @@ test('500 bot-vs-bot games always finish with legal moves and hands <= 8', () =>
   console.log('        average game length: ' + (total / 500).toFixed(1) + ' turns');
 });
 
+test('bot levels: every level plays whole games with legal moves', () => {
+  for (const level of Bot.LEVELS) {
+    for (let g = 0; g < 100; g++) {
+      const s = E.newGame({ nightmareStealsRem: g % 2 === 0 });
+      const bots = [Bot.create(level), Bot.create('normal')];
+      let turns = 0;
+      while (s.winner === null) {
+        const a = bots[s.turn].choose(s, s.turn);
+        assert.ok(a, level + ' bot must never be stuck');
+        assert.ok(E.applyAction(s, s.turn, a).ok);
+        bots.forEach((bot, seat) => bot.observe(s, seat));
+        assert.ok(++turns < 5000, 'game did not terminate');
+      }
+    }
+  }
+  assert.equal(Bot.create('nonsense').level, 'normal');
+});
+
+test('bot levels: hard keeps back a Dream it has seen the Nightmare for, nightmare peeks', () => {
+  // The opponent holds a Nightmare 4 that the bot saw them take off its board.
+  const rig = (level, sawIt) => {
+    const s = setup(); s.turn = 1;
+    const n4 = card('nightmare', 4);
+    s.players[0].hand.push(n4);
+    s.players[1].hand.push(card('dream', 4));
+    const bot = Bot.create(level);
+    if (sawIt) { s.event = { kind: 'steal', seat: 0, taken: n4 }; bot.observe(s, 1); }
+    return bot.choose(s, 1);
+  };
+  assert.equal(rig('hard', true).type, 'draw');   // they would take it straight back: wait
+  assert.equal(rig('normal', true).kind, 'place');
+
+  // An opponent's draw is only remembered by the nightmare bot.
+  const drawn = (level) => {
+    const s = setup(); s.turn = 1;
+    const n4 = card('nightmare', 4);
+    s.players[0].hand.push(n4);
+    s.players[1].hand.push(card('dream', 4));
+    const bot = Bot.create(level);
+    s.event = { kind: 'draw', seat: 0, card: n4 };
+    bot.observe(s, 1);
+    return bot.choose(s, 1);
+  };
+  assert.equal(drawn('nightmare').type, 'draw');
+  assert.equal(drawn('hard').kind, 'place'); // one unseen Nightmare is a risk worth taking
+
+  // Hard still takes the win, whatever the risk.
+  const s = setup(); s.turn = 1;
+  for (let i = 0; i < 5; i++) s.players[1].board[i] = card('dream', i + 1);
+  const d6 = card('dream', 6), n6 = card('nightmare', 6);
+  s.players[1].hand.push(d6);
+  s.players[0].hand.push(n6);
+  const bot = Bot.create('hard');
+  s.event = { kind: 'steal', seat: 0, taken: n6 }; bot.observe(s, 1);
+  assert.equal(bot.choose(s, 1).cardId, d6.id);
+});
+
 console.log('\n' + n + ' tests passed');

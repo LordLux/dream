@@ -23,6 +23,9 @@
   };
   let remSteal = false;
   try { remSteal = localStorage.getItem('dream-rem-steal') === '1'; } catch (e) { /* storage blocked */ }
+  let botLevel = 'normal';
+  try { botLevel = localStorage.getItem('dream-bot-level') || 'normal'; } catch (e) { /* storage blocked */ }
+  if (!D.Bot.LEVELS.includes(botLevel)) botLevel = 'normal';
 
   // ---------- helpers ----------
   function showScreen(id) {
@@ -229,7 +232,7 @@
   function label(seat) {
     if (ctx.mode === 'hotseat') return 'Player ' + (seat + 1);
     if (seat === ctx.seat) return 'You';
-    return ctx.mode === 'bot' ? 'Dreamy Bot' : 'Friend';
+    return ctx.mode === 'bot' ? ctx.bot.name : 'Friend';
   }
   const poss = (seat) => (label(seat) === 'You' ? 'your' : label(seat) + "'s");
   const online = () => ctx.mode === 'host' || ctx.mode === 'guest';
@@ -424,11 +427,13 @@
     if (mode === 'guest') { ctx.state = null; ctx.seat = 1; return; } // the host sends the first state
     ctx.state = E.newGame({ nightmareStealsRem: remSteal });
     ctx.seat = mode === 'hotseat' ? ctx.state.turn : 0;
+    if (mode === 'bot') ctx.bot = D.Bot.create(botLevel);
     afterChange();
   }
 
   function afterChange() {
     const s = ctx.state;
+    if (ctx.mode === 'bot') ctx.bot.observe(s, 1); // it remembers what it has seen of my hand
     if (ctx.mode === 'host') ctx.net.send({ t: 'state', view: E.viewFor(s, 1) });
     show(E.viewFor(s, ctx.seat));
     if (s.winner !== null) return;
@@ -603,7 +608,7 @@
   function botTurn(gid) {
     const s = ctx.state;
     if (gid !== ctx.gameId || ctx.mode !== 'bot' || !s || s.winner !== null || s.turn !== 1) return;
-    E.applyAction(s, 1, D.Bot.choose(s, 1));
+    E.applyAction(s, 1, ctx.bot.choose(s, 1));
     afterChange();
   }
 
@@ -1014,6 +1019,34 @@
     else cloudWipe(() => startGame(btn.dataset.mode));
   }));
 
+  function syncLevel() {
+    $$('.level').forEach((btn) => btn.setAttribute('aria-checked', String(btn.dataset.level === botLevel)));
+    $('#level-note').textContent = LEVEL_NOTES[botLevel];
+    $('#levels').dataset.level = botLevel;
+  }
+  const LEVEL_NOTES = {
+    easy: 'Sleepy Bot plays loosely and misses things.',
+    normal: 'Dreamy Bot takes the best move it sees.',
+    hard: 'Lucid Bot plans around what you might hold.',
+    nightmare: 'Nightmare Bot peeks at the cards you draw.',
+  };
+  $$('.level').forEach((btn) => btn.addEventListener('click', () => {
+    botLevel = btn.dataset.level;
+    try { localStorage.setItem('dream-bot-level', botLevel); } catch (e) { /* storage blocked */ }
+    Sfx.play('select');
+    syncLevel();
+  }));
+  $('#levels').addEventListener('keydown', (e) => { // arrow keys move through the choices, like radio buttons
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const all = $$('.level');
+    const next = all[(all.findIndex((b) => b.dataset.level === botLevel) + step + all.length) % all.length];
+    next.focus();
+    next.click();
+  });
+  syncLevel();
+
   function syncRule() {
     $$('.rule-rem-steal').forEach((box) => { box.checked = remSteal; });
     $$('.rule-state').forEach((el) => { el.textContent = remSteal ? 'On' : 'Off'; });
@@ -1044,11 +1077,47 @@
   });
 
   // ---------- decoration ----------
-  let stars = '';
-  for (let i = 0; i < 90; i++) {
-    stars += `<i class="${i % 7 === 0 ? 'big' : ''}" style="left:${(Math.random() * 100).toFixed(2)}%;top:${(Math.random() * 100).toFixed(2)}%;animation-delay:${(-Math.random() * 3).toFixed(2)}s;animation-duration:${(2 + Math.random() * 3).toFixed(2)}s"></i>`;
+  // Three layers of stars. On the title screen and in the lobby the two nearer layers drift
+  // slightly against the mouse (the far one never moves), which gives the sky some depth.
+  const STAR_LAYERS = [
+    { count: 70, shift: 0, cls: 'far' },   // px the layer moves when the mouse is at the edge of the window
+    { count: 44, shift: 7, cls: '' },
+    { count: 22, shift: 18, cls: 'big' },
+  ];
+  $('#stars').innerHTML = STAR_LAYERS.map((layer) => {
+    let stars = '';
+    for (let i = 0; i < layer.count; i++) {
+      stars += `<i class="${layer.cls}" style="left:${(Math.random() * 100).toFixed(2)}%;top:${(Math.random() * 100).toFixed(2)}%;animation-delay:${(-Math.random() * 3).toFixed(2)}s;animation-duration:${(2 + Math.random() * 3).toFixed(2)}s"></i>`;
+    }
+    return `<div class="star-layer">${stars}</div>`;
+  }).join('');
+  const starLayers = $$('#stars .star-layer');
+  const sky = { x: 0, y: 0, tx: 0, ty: 0, raf: 0 }; // where the sky is, and where it is heading (-1..1)
+  function driftSky() {
+    sky.x += (sky.tx - sky.x) * 0.07;
+    sky.y += (sky.ty - sky.y) * 0.07;
+    const settled = Math.abs(sky.tx - sky.x) < 0.001 && Math.abs(sky.ty - sky.y) < 0.001;
+    if (settled) { sky.x = sky.tx; sky.y = sky.ty; }
+    starLayers.forEach((el, i) => {
+      const shift = STAR_LAYERS[i].shift;
+      if (shift) el.style.transform = `translate(${(-sky.x * shift).toFixed(2)}px, ${(-sky.y * shift).toFixed(2)}px)`;
+    });
+    sky.raf = settled ? 0 : requestAnimationFrame(driftSky);
   }
-  $('#stars').innerHTML = stars;
+  function aimSky(x, y) {
+    sky.tx = x;
+    sky.ty = y;
+    if (!sky.raf) sky.raf = requestAnimationFrame(driftSky);
+  }
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'mouse') return;
+      // the table itself stays still: the sky re-centres while a game is on
+      if (currentScreen() === 'game') aimSky(0, 0);
+      else aimSky((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1);
+    });
+    document.documentElement.addEventListener('pointerleave', () => aimSky(0, 0));
+  }
 
   function drawMenuFan() {
     $('#menu-fan').innerHTML = [

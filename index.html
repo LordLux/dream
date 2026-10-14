@@ -23,6 +23,15 @@
     <div class="panel menu-panel">
       <button class="btn btn-dream" data-mode="online"><span class="ico">☁</span>Play Online <small>2 players · room code</small></button>
       <button class="btn btn-rem" data-mode="bot"><span class="ico">✿</span>Play vs. Bot <small>single player</small></button>
+      <div class="levels-box">
+        <div class="levels" id="levels" role="radiogroup" aria-label="Bot difficulty">
+          <button type="button" class="level" role="radio" data-level="easy">Easy</button>
+          <button type="button" class="level" role="radio" data-level="normal">Normal</button>
+          <button type="button" class="level" role="radio" data-level="hard">Hard</button>
+          <button type="button" class="level" role="radio" data-level="nightmare">Nightmare</button>
+        </div>
+        <p class="level-note" id="level-note"></p>
+      </div>
       <button class="btn btn-night" data-mode="hotseat"><span class="ico">☾</span>Pass &amp; Play <small>2 players · one device</small></button>
       <label class="toggle">
         <input type="checkbox" class="rule-rem-steal">

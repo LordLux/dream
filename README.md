@@ -5,7 +5,7 @@ Giampaolo Razzino & Alessia Iorno). Fill your six slots with Dreams before your
 opponent does — and send Nightmares to steal theirs.
 
 - **Play Online** — 2 players, peer-to-peer over WebRTC (PeerJS). One player hosts and shares a 5-character room code.
-- **Play vs. Bot** — single player.
+- **Play vs. Bot** — single player, with four levels: *Easy* plays loosely, *Normal* takes the best move it sees, *Hard* plans around what you might hold (using only what a player may know), and *Nightmare* also peeks at the top of the draw pile and at every card you draw.
 - **Pass & Play** — 2 players on one device, with a privacy screen between turns.
 
 ## Run it
